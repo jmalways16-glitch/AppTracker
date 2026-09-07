@@ -199,8 +199,34 @@ export interface ParsedFileResult {
   selectedSheetName?: string;
 }
 
+/**
+ * Safely invokes XLSX.read while intercepting spurious ZIP descriptor warnings
+ * ("Bad uncompressed size") emitted by SheetJS for brokerage exports where the
+ * local file header has size 0 and the actual size is in the central directory.
+ */
+function safeXlsxRead(fileData: ArrayBuffer | Uint8Array, options: XLSX.ParsingOptions): XLSX.WorkBook {
+  const origError = console.error;
+  const origWarn = console.warn;
+  try {
+    console.error = (...args: any[]) => {
+      const msg = typeof args[0] === 'string' ? args[0] : '';
+      if (msg.includes('Bad uncompressed size')) return;
+      origError.apply(console, args);
+    };
+    console.warn = (...args: any[]) => {
+      const msg = typeof args[0] === 'string' ? args[0] : '';
+      if (msg.includes('Bad uncompressed size')) return;
+      origWarn.apply(console, args);
+    };
+    return XLSX.read(fileData, options);
+  } finally {
+    console.error = origError;
+    console.warn = origWarn;
+  }
+}
+
 export function parseXtbFile(fileData: ArrayBuffer | Uint8Array): ParsedFileResult {
-  const workbook = XLSX.read(fileData, {
+  const workbook = safeXlsxRead(fileData, {
     type: 'array',
     cellDates: true,
     raw: false,

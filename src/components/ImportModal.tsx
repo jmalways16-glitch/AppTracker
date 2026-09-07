@@ -54,7 +54,7 @@ export const ImportModal: React.FC<ImportModalProps> = ({
   });
   const [parsedRows, setParsedRows] = useState<RawParsedRow[]>([]);
   const [importMode, setImportMode] = useState<'replace' | 'merge'>('replace');
-  const [importStage, setImportStage] = useState<'idle' | 'fetching_prices' | 'saving_firestore'>('idle');
+  const [importStage, setImportStage] = useState<'idle' | 'fetching_prices' | 'saving_firestore' | 'success'>('idle');
   const [importProgress, setImportProgress] = useState<{ current: number; total: number } | null>(null);
   const [isGetquin, setIsGetquin] = useState<boolean>(false);
   const [getquinPositions, setGetquinPositions] = useState<Position[] | null>(null);
@@ -245,11 +245,14 @@ export const ImportModal: React.FC<ImportModalProps> = ({
         }
       );
 
-      setImportStage('idle');
-      onClose();
+      setImportStage('success');
+      setTimeout(() => {
+        setImportStage('idle');
+        onClose();
+      }, 1500);
     } catch (err: any) {
       setImportStage('idle');
-      setErrorMsg(err?.message || 'Failed to save imported positions to Firestore cloud.');
+      setErrorMsg(err?.message || 'Falha ao guardar posições importadas. Por favor, tente novamente.');
     }
   };
 
@@ -257,7 +260,12 @@ export const ImportModal: React.FC<ImportModalProps> = ({
   const invalidCount = parsedRows.filter((r) => !r.isValid).length;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 overflow-y-auto">
+    <div 
+      className="fixed inset-0 z-50 flex items-center justify-center bg-black/40 backdrop-blur-xs p-4 overflow-y-auto"
+      onClick={() => {
+        if (importStage === 'idle') onClose();
+      }}
+    >
       <div 
         className="relative w-full max-w-3xl bg-white rounded-sm shadow-xl border border-[#E5E7EB] overflow-hidden my-8 max-h-[90vh] flex flex-col"
         onClick={(e) => e.stopPropagation()}
@@ -274,7 +282,8 @@ export const ImportModal: React.FC<ImportModalProps> = ({
           </div>
           <button
             onClick={onClose}
-            className="p-1.5 text-[#9CA3AF] hover:text-[#111827] hover:bg-gray-100 rounded-sm transition-colors cursor-pointer"
+            disabled={importStage !== 'idle'}
+            className="p-1.5 text-[#9CA3AF] hover:text-[#111827] hover:bg-gray-100 rounded-sm transition-colors cursor-pointer disabled:opacity-25 disabled:pointer-events-none"
           >
             <X className="w-5 h-5" />
           </button>
@@ -282,6 +291,48 @@ export const ImportModal: React.FC<ImportModalProps> = ({
 
         {/* Modal Scrollable Body */}
         <div className="p-6 overflow-y-auto space-y-6 flex-1">
+          {importStage !== 'idle' && (
+            <div className={`p-4 rounded-sm border transition-all ${
+              importStage === 'success' 
+                ? 'bg-emerald-50 border-emerald-200 text-emerald-800' 
+                : 'bg-blue-50 border-blue-200 text-blue-900'
+            }`}>
+              <div className="flex items-center gap-3">
+                {importStage === 'success' ? (
+                  <CheckCircle2 className="w-5 h-5 text-emerald-600 shrink-0" />
+                ) : (
+                  <Loader2 className="w-5 h-5 text-blue-600 animate-spin shrink-0" />
+                )}
+                <div className="flex-1">
+                  <div className="text-xs font-semibold">
+                    {importStage === 'fetching_prices' && `A obter cotações de mercado (${importProgress?.current || 0}/${importProgress?.total || validCount})...`}
+                    {importStage === 'saving_firestore' && 'A persistir e sincronizar posições...'}
+                    {importStage === 'success' && 'Importação concluída com sucesso!'}
+                  </div>
+                  <div className="text-[11px] opacity-80 mt-0.5">
+                    {importStage === 'fetching_prices' && 'A atualizar preços reais via Yahoo Finance / Finnhub'}
+                    {importStage === 'saving_firestore' && 'A guardar registos e a consolidar no seu portfólio'}
+                    {importStage === 'success' && 'A fechar e a carregar métricas atualizadas da carteira...'}
+                  </div>
+                </div>
+              </div>
+              
+              {/* Progress Bar */}
+              {importStage !== 'success' && (
+                <div className="w-full bg-blue-200/60 rounded-full h-1.5 mt-3 overflow-hidden">
+                  <div 
+                    className="bg-blue-600 h-1.5 rounded-full transition-all duration-300"
+                    style={{
+                      width: importStage === 'saving_firestore'
+                        ? '92%'
+                        : `${Math.min(90, Math.max(10, ((importProgress?.current || 0) / (importProgress?.total || validCount || 1)) * 100))}%`
+                    }}
+                  />
+                </div>
+              )}
+            </div>
+          )}
+
           {errorMsg && (
             <div className="p-3 bg-red-50 border border-red-200 rounded-sm text-xs text-red-700 flex items-start gap-2">
               <AlertTriangle className="w-4 h-4 shrink-0 text-red-500 mt-0.5" />
@@ -584,6 +635,12 @@ export const ImportModal: React.FC<ImportModalProps> = ({
                 <>
                   <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
                   <span>A guardar no Firestore...</span>
+                </>
+              )}
+              {importStage === 'success' && (
+                <>
+                  <CheckCircle2 className="w-3.5 h-3.5 text-white" />
+                  <span>Concluído com Sucesso!</span>
                 </>
               )}
               {importStage === 'idle' && (

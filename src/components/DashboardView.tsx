@@ -52,7 +52,7 @@ interface DashboardViewProps {
   lastRefreshTime?: string;
 }
 
-const PERIODS: ChartPeriod[] = ['1D', '1W', '2W', '1M', '3M', 'YTD', '1Y', '3Y', '5Y', 'All'];
+const PERIODS: ChartPeriod[] = ['1D', '3D', '1W', '2W', '1M', '3M', '6M', 'YTD', '1Y', '3Y', '5Y', 'All'];
 
 const BENCHMARK_COLORS = ['#9CA3AF', '#F59E0B', '#8B5CF6', '#10B981', '#EC4899', '#0EA5E9'];
 
@@ -60,6 +60,9 @@ const BENCHMARK_INFO: Record<BenchmarkKey, { name: string; desc: string }> = {
   SPY: { name: 'S&P 500 (SPY)', desc: 'US Large-Cap Equity Index' },
   VWCE: { name: 'FTSE All-World (VWCE)', desc: 'Global Developed & Emerging Markets ETF' },
   QQQ: { name: 'NASDAQ 100 (QQQ)', desc: 'Tech & Growth Large-Cap Index' },
+  STOXX: { name: 'STOXX Europe 600', desc: 'European Developed Markets ETF (EXSA)' },
+  BTC: { name: 'Bitcoin (BTC)', desc: 'Leading Cryptocurrency Reference' },
+  GLD: { name: 'Gold (GLD)', desc: 'Gold Spot Trust ETF' },
 };
 
 export const DashboardView: React.FC<DashboardViewProps> = ({

@@ -390,14 +390,7 @@ export async function generateBenchmarkComparison(
     return { comparisonPoints: [], hasMissingData: false };
   }
 
-  // Map benchmark to ticker symbol
-  const benchmarkTickerMap: Record<BenchmarkKey, string> = {
-    SPY: 'SPY',
-    VWCE: 'VWCE.DE',
-    QQQ: 'QQQ',
-  };
-
-  const ticker = benchmarkTickerMap[benchmark];
+  const ticker = BENCHMARK_TICKER_MAP[benchmark];
   let benchmarkCandles: { date: string; price: number }[] = [];
 
   try {
@@ -472,10 +465,13 @@ export async function generateBenchmarkComparison(
 }
 
 /** Ticker used to fetch real candle data for each benchmark key */
-const BENCHMARK_TICKER_MAP: Record<BenchmarkKey, string> = {
+export const BENCHMARK_TICKER_MAP: Record<BenchmarkKey, string> = {
   SPY: 'SPY',
   VWCE: 'VWCE.DE',
   QQQ: 'QQQ',
+  STOXX: 'EXSA.DE',
+  BTC: 'BTC-USD',
+  GLD: 'GLD',
 };
 
 /**

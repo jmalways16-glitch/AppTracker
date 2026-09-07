@@ -48,7 +48,7 @@ export interface Position {
   dayChangePct?: number;
 }
 
-export type ChartPeriod = '1D' | '1W' | '2W' | '1M' | '3M' | 'YTD' | '1Y' | '3Y' | '5Y' | 'All';
+export type ChartPeriod = '1D' | '3D' | '1W' | '2W' | '1M' | '3M' | '6M' | 'YTD' | '1Y' | '3Y' | '5Y' | 'All';
 
 export interface MarketQuote {
   symbol: string;
@@ -162,7 +162,7 @@ export interface PortfolioHistoryResult {
   missingSymbols: string[];
 }
 
-export type BenchmarkKey = 'SPY' | 'VWCE' | 'QQQ';
+export type BenchmarkKey = 'SPY' | 'VWCE' | 'QQQ' | 'STOXX' | 'BTC' | 'GLD';
 
 export interface ColumnMapping {
   symbolCol: string;

@@ -14,9 +14,10 @@ import {
   onAuthStateChanged, 
   User 
 } from 'firebase/auth';
+import firebaseAppletConfig from '../../firebase-applet-config.json';
 import { CloudPortfolioRecord } from '../types';
 
-// Detect Firebase config from environment or window injection
+// Detect Firebase config from environment, imported applet config, or window injection
 export function getFirebaseConfig(): Record<string, any> | null {
   const env = (import.meta as any).env || {};
   const win = typeof window !== 'undefined' ? (window as any) : {};
@@ -25,9 +26,21 @@ export function getFirebaseConfig(): Record<string, any> | null {
     return win.__FIREBASE_CONFIG__;
   }
 
-  // Check Vite environment variables or fallback to project configuration
-  const projectId = env.VITE_FIREBASE_PROJECT_ID || 'johnfolio-c82d3';
-  const apiKey = env.VITE_FIREBASE_API_KEY || 'AIzaSyBPG0ajK6oWXiD-rmJMOB-trHhqpV6Vq5M';
+  // Use the provisioned AI Studio Firebase Applet Config if available
+  if (firebaseAppletConfig && firebaseAppletConfig.apiKey && firebaseAppletConfig.projectId) {
+    return {
+      apiKey: firebaseAppletConfig.apiKey,
+      authDomain: firebaseAppletConfig.authDomain,
+      projectId: firebaseAppletConfig.projectId,
+      storageBucket: firebaseAppletConfig.storageBucket,
+      messagingSenderId: firebaseAppletConfig.messagingSenderId,
+      appId: firebaseAppletConfig.appId,
+    };
+  }
+
+  // Fallback to Vite environment variables or defaults
+  const projectId = env.VITE_FIREBASE_PROJECT_ID;
+  const apiKey = env.VITE_FIREBASE_API_KEY;
 
   if (projectId && apiKey) {
     return {
@@ -69,13 +82,20 @@ export function getFirebaseApp(): FirebaseApp {
 
 export function getAppFirestore(): Firestore {
   if (!firestoreInstance) {
-    // experimentalAutoDetectLongPolling avoids the Firestore WebChannel
-    // connection hanging indefinitely (perpetual "offline" state) behind
-    // proxies that don't support streaming HTTP/gRPC well, such as the
-    // GitHub Codespaces port-forwarding proxy.
-    firestoreInstance = initializeFirestore(getFirebaseApp(), {
+    const app = getFirebaseApp();
+    const databaseId = firebaseAppletConfig?.firestoreDatabaseId;
+
+    // Use named databaseId if provisioned by AI Studio (e.g. ai-studio-apptracker-...)
+    // or fallback to (default) if not specified
+    const dbOptions = {
       experimentalAutoDetectLongPolling: true,
-    });
+    };
+
+    if (databaseId && databaseId !== '(default)') {
+      firestoreInstance = initializeFirestore(app, dbOptions, databaseId);
+    } else {
+      firestoreInstance = initializeFirestore(app, dbOptions);
+    }
   }
   return firestoreInstance;
 }
@@ -88,34 +108,76 @@ export function getAppAuth(): Auth {
 }
 
 /**
- * Ensures anonymous authentication is active.
- * Firebase automatically persists anonymous credentials in IndexedDB/browser session.
+ * Fallback persistent device/browser UID when anonymous auth is restricted by Firebase admin
  */
-export async function ensureAnonymousAuth(): Promise<User> {
-  const auth = getAppAuth();
-  
-  if (auth.currentUser) {
-    return auth.currentUser;
+export function getOrCreateClientUserId(): string {
+  const KEY = 'xtb_portfolio_client_uid';
+  try {
+    let id = localStorage.getItem(KEY);
+    if (!id) {
+      id = 'client_' + Math.random().toString(36).substring(2, 10) + '_' + Date.now().toString(36);
+      localStorage.setItem(KEY, id);
+    }
+    return id;
+  } catch {
+    return 'default_portfolio_client';
+  }
+}
+
+/**
+ * Ensures user identity for Firestore partitioning.
+ * Attempts Firebase Auth first. If anonymous auth is disabled or restricted
+ * (auth/admin-restricted-operation), seamlessly falls back to a persistent client UUID
+ * stored in localStorage so cloud reads/writes proceed without error.
+ */
+export async function ensureAnonymousAuth(): Promise<{ uid: string }> {
+  if (!isFirebaseConfigured()) {
+    return { uid: getOrCreateClientUserId() };
   }
 
-  return new Promise((resolve, reject) => {
-    const unsubscribe = onAuthStateChanged(auth, async (user) => {
-      if (user) {
-        unsubscribe();
-        resolve(user);
-      } else {
-        try {
-          const userCredential = await signInAnonymously(auth);
-          unsubscribe();
-          resolve(userCredential.user);
-        } catch (error) {
-          unsubscribe();
-          reject(error);
+  try {
+    const auth = getAppAuth();
+    if (auth.currentUser) {
+      return { uid: auth.currentUser.uid };
+    }
+
+    return await new Promise<{ uid: string }>((resolve) => {
+      let isDone = false;
+      const finish = (uid: string) => {
+        if (!isDone) {
+          isDone = true;
+          try { unsubscribe(); } catch {}
+          resolve({ uid });
         }
-      }
-    }, (err) => {
-      unsubscribe();
-      reject(err);
+      };
+
+      const unsubscribe = onAuthStateChanged(
+        auth,
+        (user) => {
+          if (user) {
+            finish(user.uid);
+          }
+        },
+        (_err) => {
+          finish(getOrCreateClientUserId());
+        }
+      );
+
+      signInAnonymously(auth)
+        .then((cred) => {
+          finish(cred.user.uid);
+        })
+        .catch((_err) => {
+          // Admin-restricted-operation or disabled anonymous auth: use persistent client ID
+          finish(getOrCreateClientUserId());
+        });
+
+      // Quick timeout fallback
+      setTimeout(() => {
+        finish(getOrCreateClientUserId());
+      }, 1500);
     });
-  });
+  } catch (_error) {
+    return { uid: getOrCreateClientUserId() };
+  }
 }

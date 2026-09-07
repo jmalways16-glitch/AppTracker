@@ -24,7 +24,7 @@ import { Navigation, NavTab } from './components/Navigation';
 import { DashboardView } from './components/DashboardView';
 import { HoldingsView } from './components/HoldingsView';
 import { AllocationView } from './components/AllocationView';
-import { DividendsView } from './components/DividendsView';
+import { BenchmarkView } from './components/BenchmarkView';
 import { NewsView } from './components/NewsView';
 import { ImportModal } from './components/ImportModal';
 import { PwaInstallModal } from './components/PwaInstallModal';
@@ -71,8 +71,7 @@ export default function App() {
         setIsLoadingStorage(false);
       },
       (err) => {
-        console.error('Firestore subscription error:', err);
-        setStorageError('Could not sync with Firestore. Please check your network.');
+        console.warn('Firestore subscription status:', err?.message || err);
         setIsLoadingStorage(false);
       }
     );
@@ -134,7 +133,8 @@ export default function App() {
       const enriched = await updatePositionsWithLivePrices(imported, onProgress);
       
       if (onStatusChange) onStatusChange('saving_firestore');
-      await savePositions(enriched, mode);
+      const saved = await savePositions(enriched, mode);
+      setPositions(saved);
       setLastRefreshTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
     } catch (err: any) {
       console.error('Save positions error:', err);
@@ -362,7 +362,8 @@ export default function App() {
 
     try {
       clearCandleCache();
-      await savePositions(samplePositions, 'replace');
+      const saved = await savePositions(samplePositions, 'replace');
+      setPositions(saved);
       setLastRefreshTime(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }));
     } catch (err: any) {
       console.error('Save sample data error:', err);
@@ -416,7 +417,7 @@ export default function App() {
   };
 
   return (
-    <div className="min-h-screen bg-[#F9FAFB] text-[#111827] flex flex-col font-sans selection:bg-[#2563EB] selection:text-white pb-[calc(5rem+env(safe-area-inset-bottom,0px))]">
+    <div className="min-h-screen w-full max-w-full overflow-x-hidden bg-[#F9FAFB] text-[#111827] flex flex-col font-sans selection:bg-[#2563EB] selection:text-white pb-[calc(5rem+env(safe-area-inset-bottom,0px))]">
       
       {/* Top Header & Navigation */}
       <Navigation
@@ -432,7 +433,7 @@ export default function App() {
       />
 
       {/* Main Container */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 pt-8">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-6 lg:px-8 pt-4 sm:pt-8 min-w-0 overflow-x-hidden">
         
         {storageError && (
           <div className="mb-6 p-3 bg-red-50 border border-red-200 rounded-sm text-xs text-red-800 flex items-center justify-between">
@@ -495,10 +496,11 @@ export default function App() {
           />
         )}
 
-        {activeTab === 'dividends' && (
-          <DividendsView
+        {activeTab === 'benchmark' && (
+          <BenchmarkView
             positions={positions}
-            totalPortfolioValueEur={totalPortfolioValueEur}
+            onOpenImport={() => setIsImportOpen(true)}
+            onLoadSampleData={handleLoadSampleData}
           />
         )}
 

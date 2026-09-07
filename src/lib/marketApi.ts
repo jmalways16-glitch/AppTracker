@@ -687,6 +687,14 @@ export async function getHistoricalPrices(
         twelveInterval = '15min';
         twelveOutputSize = 32;
         break;
+      case '3D':
+        days = 4;
+        finnhubResolution = '30';
+        yahooRange = '5d';
+        yahooInterval = '30m';
+        twelveInterval = '30min';
+        twelveOutputSize = 48;
+        break;
       case '1W':
         days = 7;
         finnhubResolution = '60';
@@ -718,6 +726,14 @@ export async function getHistoricalPrices(
         yahooInterval = '1d';
         twelveInterval = '1day';
         twelveOutputSize = 90;
+        break;
+      case '6M':
+        days = 180;
+        finnhubResolution = 'D';
+        yahooRange = '6mo';
+        yahooInterval = '1d';
+        twelveInterval = '1day';
+        twelveOutputSize = 180;
         break;
       case 'YTD': {
         const startOfYear = new Date(new Date().getFullYear(), 0, 1).getTime();
@@ -778,6 +794,8 @@ export async function getHistoricalPrices(
           const d = new Date(timestamp * 1000);
           const dateStr = period === '1D' 
             ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+            : period === '3D'
+            ? `${d.toLocaleDateString([], { month: 'numeric', day: 'numeric' })} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
             : d.toISOString().split('T')[0];
           return {
             date: dateStr,
@@ -841,6 +859,8 @@ export async function getHistoricalPrices(
             const d = new Date(timestamps[i] * 1000);
             const dateStr = period === '1D'
               ? d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+              : period === '3D'
+              ? `${d.toLocaleDateString([], { month: 'numeric', day: 'numeric' })} ${d.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}`
               : d.toISOString().split('T')[0];
             series.push({
               date: dateStr,
