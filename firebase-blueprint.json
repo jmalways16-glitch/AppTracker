@@ -1,0 +1,42 @@
+{
+  "entities": {
+    "Portfolio": {
+      "title": "Portfolio",
+      "description": "User's XTB open positions portfolio state, holdings, and market data cache",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "ID of the anonymous or authenticated user owning this portfolio"
+        },
+        "positions": {
+          "type": "string",
+          "description": "JSON serialized array of open positions imported from XTB"
+        },
+        "marketDataCache": {
+          "type": "string",
+          "description": "JSON serialized market quotes and profile metadata cache"
+        },
+        "rates": {
+          "type": "string",
+          "description": "JSON serialized FX rates to EUR"
+        },
+        "updatedAt": {
+          "type": "string",
+          "description": "ISO timestamp of the last cloud sync"
+        },
+        "importedAt": {
+          "type": "string",
+          "description": "ISO timestamp of the last XTB file import"
+        }
+      },
+      "required": ["userId", "updatedAt"]
+    }
+  },
+  "firestore": {
+    "/portfolios/{userId}": {
+      "schema": "Portfolio",
+      "description": "Single portfolio record per user storing holdings and market data"
+    }
+  }
+}

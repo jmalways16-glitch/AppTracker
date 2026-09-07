@@ -1,0 +1,6 @@
+{
+  "name": "Johnfolio",
+  "description": "Personal investment portfolio tracker for XTB Open Positions exports with live market data, dividends, allocation breakdowns, and performance metrics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
