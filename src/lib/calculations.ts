@@ -240,7 +240,7 @@ export function calculatePerformanceMetrics(
  */
 export async function reconstructPortfolioHistory(
   positions: Position[],
-  period: ChartPeriod = 'All'
+  period: ChartPeriod | number = 'All'
 ): Promise<PortfolioHistoryResult> {
   if (positions.length === 0) {
     return { points: [], hasMissingData: false, missingSymbols: [] };
@@ -487,7 +487,7 @@ export const BENCHMARK_TICKER_MAP: Record<BenchmarkKey, string> = {
 export async function generateMultiBenchmarkComparison(
   historyPoints: PortfolioHistoryPoint[],
   benchmarks: BenchmarkKey[],
-  chartPeriod: ChartPeriod = 'All'
+  chartPeriod: ChartPeriod | number = 'All'
 ): Promise<{
   comparisonPoints: MultiBenchmarkPoint[];
   totalReturns: Partial<Record<BenchmarkKey, number>>;
