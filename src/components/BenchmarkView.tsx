@@ -19,7 +19,9 @@ import {
   ArrowUpRight,
   ArrowDownRight,
   Sparkles,
-  BarChart3
+  BarChart3,
+  RotateCcw,
+  ZoomIn
 } from 'lucide-react';
 import {
   ResponsiveContainer,
@@ -27,7 +29,8 @@ import {
   Line,
   XAxis,
   YAxis,
-  Tooltip
+  Tooltip,
+  Brush
 } from 'recharts';
 
 interface BenchmarkViewProps {
@@ -108,6 +111,54 @@ const PERIOD_LIST: { id: ChartPeriod; label: string }[] = [
   { id: 'All', label: 'ALL' },
 ];
 
+// Compact hover/scrub tooltip: one bold, highlighted line for the portfolio,
+// then a short muted list for whichever benchmarks are currently visible.
+// This replaces the old permanent badge stack with something that only
+// appears when the user is actually pointing at the chart.
+const BenchmarkTooltip: React.FC<any> = ({ active, payload, label, filteredBenchmarkKeys }) => {
+  if (!active || !payload || !payload.length) return null;
+  const point = payload[0]?.payload as MultiBenchmarkPoint | undefined;
+  if (!point) return null;
+
+  const pPct = typeof point.portfolioPct === 'number' ? point.portfolioPct : 0;
+  const pPositive = pPct >= 0;
+
+  return (
+    <div className="bg-white/95 backdrop-blur-sm border border-gray-200 rounded-xl shadow-lg px-3 py-2 text-xs min-w-[130px]">
+      <div className="text-[10px] font-semibold text-gray-400 mb-1.5">{label}</div>
+
+      <div className="flex items-center justify-between gap-3 mb-1">
+        <span className="font-bold text-[#0369A1]">A minha carteira</span>
+        <span className={`font-bold ${pPositive ? 'text-[#059669]' : 'text-[#DC2626]'}`}>
+          {pPositive ? '+' : ''}{pPct.toFixed(2)}%
+        </span>
+      </div>
+
+      {(filteredBenchmarkKeys as BenchmarkKey[]).length > 0 && (
+        <div className="pt-1 mt-1 border-t border-gray-100 space-y-0.5">
+          {(filteredBenchmarkKeys as BenchmarkKey[]).map((key) => {
+            const meta = CORE_BENCHMARKS.find((b) => b.key === key);
+            if (!meta) return null;
+            const val = typeof point[key] === 'number' ? (point[key] as number) : 0;
+            const isPos = val >= 0;
+            return (
+              <div key={key} className="flex items-center justify-between gap-3 text-[10px]">
+                <span className="flex items-center gap-1 text-gray-500">
+                  <span className="w-1.5 h-1.5 rounded-full" style={{ backgroundColor: meta.color }} />
+                  {meta.name}
+                </span>
+                <span className={isPos ? 'text-[#059669]' : 'text-[#DC2626]'}>
+                  {isPos ? '+' : ''}{val.toFixed(2)}%
+                </span>
+              </div>
+            );
+          })}
+        </div>
+      )}
+    </div>
+  );
+};
+
 export const BenchmarkView: React.FC<BenchmarkViewProps> = ({
   positions,
   onOpenImport,
@@ -120,6 +171,30 @@ export const BenchmarkView: React.FC<BenchmarkViewProps> = ({
   const [portfolioReturnPct, setPortfolioReturnPct] = useState<number>(0);
   const [hoveredPoint, setHoveredPoint] = useState<MultiBenchmarkPoint | null>(null);
   const [showInfoModal, setShowInfoModal] = useState<boolean>(false);
+
+  // Which benchmark lines are currently visible (tap a chip to declutter the chart)
+  const [visibleBenchmarks, setVisibleBenchmarks] = useState<Set<BenchmarkKey>>(
+    new Set(ACTIVE_BENCHMARK_KEYS)
+  );
+  const toggleBenchmark = (key: BenchmarkKey) => {
+    setVisibleBenchmarks((prev) => {
+      const next = new Set(prev);
+      if (next.has(key)) {
+        next.delete(key);
+      } else {
+        next.add(key);
+      }
+      return next;
+    });
+  };
+  const filteredBenchmarkKeys = useMemo(
+    () => ACTIVE_BENCHMARK_KEYS.filter((k) => visibleBenchmarks.has(k)),
+    [visibleBenchmarks]
+  );
+
+  // Zoom range (controlled Brush) - indices into comparisonPoints
+  const [zoomRange, setZoomRange] = useState<{ startIndex: number; endIndex: number } | null>(null);
+  const isZoomed = !!zoomRange && (zoomRange.startIndex > 0 || zoomRange.endIndex < comparisonPoints.length - 1);
 
   // Total Portfolio Value in EUR
   const totalPortfolioValueEur = useMemo(() => {
@@ -190,6 +265,17 @@ export const BenchmarkView: React.FC<BenchmarkViewProps> = ({
     };
   }, [positions, selectedPeriod]);
 
+  // Reset zoom whenever the underlying data changes (new period / new positions)
+  useEffect(() => {
+    setZoomRange(null);
+  }, [comparisonPoints]);
+
+  // The slice of data currently visible in the chart (full range, or zoomed-in window)
+  const visiblePoints = useMemo(() => {
+    if (!zoomRange) return comparisonPoints;
+    return comparisonPoints.slice(zoomRange.startIndex, zoomRange.endIndex + 1);
+  }, [comparisonPoints, zoomRange]);
+
   // Compute active displayed values: interactive scrubbing point or period end
   const displayedPct = useMemo(() => {
     if (hoveredPoint && typeof hoveredPoint.portfolioPct === 'number') {
@@ -241,15 +327,15 @@ export const BenchmarkView: React.FC<BenchmarkViewProps> = ({
 
   // Unified Y domain covering portfolio & all 4 benchmarks with comfortable vertical breathing room
   const yDomain = useMemo(() => {
-    if (comparisonPoints.length === 0) return { min: -1, max: 1 };
+    if (visiblePoints.length === 0) return { min: -1, max: 1 };
     let min = Infinity;
     let max = -Infinity;
-    comparisonPoints.forEach((pt) => {
+    visiblePoints.forEach((pt) => {
       if (typeof pt.portfolioPct === 'number') {
         min = Math.min(min, pt.portfolioPct);
         max = Math.max(max, pt.portfolioPct);
       }
-      ACTIVE_BENCHMARK_KEYS.forEach((key) => {
+      filteredBenchmarkKeys.forEach((key) => {
         const v = pt[key];
         if (typeof v === 'number') {
           min = Math.min(min, v);
@@ -265,16 +351,19 @@ export const BenchmarkView: React.FC<BenchmarkViewProps> = ({
     const range = max - min;
     const pad = Math.max(range * 0.16, 0.5);
     return { min: min - pad, max: max + pad };
-  }, [comparisonPoints]);
+  }, [visiblePoints, filteredBenchmarkKeys]);
 
-  // Guaranteed Anti-Collision Algorithm: Badges at the end of each line that NEVER overlap
+  // Simplified end-of-line markers: a small dot per visible benchmark (no permanent
+  // labels, to keep the chart uncluttered) plus a single highlighted badge for the
+  // portfolio line, which is the one we want to stand out.
   const lineEndBadges = useMemo(() => {
-    if (comparisonPoints.length === 0) return [];
-    const target = hoveredPoint || comparisonPoints[comparisonPoints.length - 1];
+    if (visiblePoints.length === 0) return [];
+    const target = hoveredPoint || visiblePoints[visiblePoints.length - 1];
     if (!target) return [];
 
+    // Bottom offset now also accounts for the Brush (zoom slider) strip below the axis
     const plotTop = 18;
-    const plotBottom = chartDimensions.height - 28;
+    const plotBottom = chartDimensions.height - 44;
     const plotHeight = Math.max(40, plotBottom - plotTop);
     const domainRange = yDomain.max - yDomain.min;
 
@@ -293,25 +382,27 @@ export const BenchmarkView: React.FC<BenchmarkViewProps> = ({
       value: number;
       rawY: number;
       adjustedY: number;
+      isPortfolio: boolean;
     }
 
     const items: BadgeItem[] = [];
 
-    // 1. Portfolio line badge
+    // 1. Portfolio line badge (always shown, always the visual highlight)
     const pVal = target.portfolioPct ?? portfolioReturnPct ?? 0;
     const pY = getY(pVal);
     items.push({
       id: 'portfolio',
-      name: 'XTB',
+      name: 'A minha carteira',
       color: '#0284C7',
       textColor: '#FFFFFF',
       value: pVal,
       rawY: pY,
       adjustedY: pY,
+      isPortfolio: true,
     });
 
-    // 2. Selected 4 benchmark badges
-    ACTIVE_BENCHMARK_KEYS.forEach((key) => {
+    // 2. Only currently visible benchmarks get a (small, label-less) end dot
+    filteredBenchmarkKeys.forEach((key) => {
       const meta = CORE_BENCHMARKS.find((b) => b.key === key);
       if (!meta) return;
       const bVal = (typeof target[key] === 'number' ? target[key] : benchmarkReturns[key]) as number ?? 0;
@@ -324,50 +415,26 @@ export const BenchmarkView: React.FC<BenchmarkViewProps> = ({
         value: bVal,
         rawY: bY,
         adjustedY: bY,
+        isPortfolio: false,
       });
     });
 
-    // Sort ascending by rawY (from top of chart downwards)
-    items.sort((a, b) => a.rawY - b.rawY);
-
-    // Enforce 23px vertical distance between each badge so they NEVER collide
-    const minGap = 23;
+    // Only the portfolio badge carries text, so the only collision that matters is
+    // keeping it clear of the top/bottom edges of the plot.
     const topBound = 14;
-    const bottomBound = chartDimensions.height - 24;
-
-    // Pass 1: push downwards
-    for (let i = 1; i < items.length; i++) {
-      if (items[i].adjustedY < items[i - 1].adjustedY + minGap) {
-        items[i].adjustedY = items[i - 1].adjustedY + minGap;
-      }
-    }
-
-    // Pass 2: push upwards if hitting bottom margin
-    if (items.length > 0 && items[items.length - 1].adjustedY > bottomBound) {
-      items[items.length - 1].adjustedY = bottomBound;
-      for (let i = items.length - 2; i >= 0; i--) {
-        if (items[i].adjustedY > items[i + 1].adjustedY - minGap) {
-          items[i].adjustedY = items[i + 1].adjustedY - minGap;
-        }
-      }
-    }
-
-    // Pass 3: push downwards if hitting top margin
-    if (items.length > 0 && items[0].adjustedY < topBound) {
-      items[0].adjustedY = topBound;
-      for (let i = 1; i < items.length; i++) {
-        if (items[i].adjustedY < items[i - 1].adjustedY + minGap) {
-          items[i].adjustedY = items[i - 1].adjustedY + minGap;
-        }
-      }
+    const bottomBound = chartDimensions.height - 40;
+    const portfolioItem = items.find((i) => i.isPortfolio);
+    if (portfolioItem) {
+      portfolioItem.adjustedY = Math.min(bottomBound, Math.max(topBound, portfolioItem.adjustedY));
     }
 
     return items;
   }, [
-    comparisonPoints,
+    visiblePoints,
     hoveredPoint,
     portfolioReturnPct,
     benchmarkReturns,
+    filteredBenchmarkKeys,
     yDomain,
     chartDimensions,
   ]);
@@ -507,25 +574,34 @@ export const BenchmarkView: React.FC<BenchmarkViewProps> = ({
 
       {/* 2. Top Legend Pills (All 4 predefined + Portfolio) */}
       <div className="flex items-center gap-1.5 flex-wrap pt-1 pb-2.5">
-        {/* Portfolio Chip */}
+        {/* Portfolio Chip - always on, this is the line we highlight */}
         <div className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-sky-200 bg-sky-50 text-xs font-bold text-[#0369A1] shadow-2xs whitespace-nowrap">
           <span className="w-2 h-2 rounded-full bg-[#0284C7] ring-2 ring-sky-200 shrink-0" />
-          <span>XTB (Carteira)</span>
+          <span>A minha carteira</span>
         </div>
 
-        {/* 4 Core Benchmarks */}
-        {CORE_BENCHMARKS.map((meta) => (
-          <div
-            key={meta.key}
-            className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border border-[#E5E7EB] bg-white text-xs font-semibold text-[#374151] shadow-2xs whitespace-nowrap"
-          >
-            <span 
-              className="w-2 h-2 rounded-full shrink-0" 
-              style={{ backgroundColor: meta.color }}
-            />
-            <span>{meta.name}</span>
-          </div>
-        ))}
+        {/* 4 Core Benchmarks - tap to show/hide, so the chart stays as simple
+            or as detailed as the user wants */}
+        {CORE_BENCHMARKS.map((meta) => {
+          const isOn = visibleBenchmarks.has(meta.key);
+          return (
+            <button
+              key={meta.key}
+              onClick={() => toggleBenchmark(meta.key)}
+              className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full border text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+                isOn
+                  ? 'border-[#E5E7EB] bg-white text-[#374151] shadow-2xs'
+                  : 'border-gray-100 bg-gray-50 text-gray-400 opacity-50'
+              }`}
+            >
+              <span
+                className="w-2 h-2 rounded-full shrink-0"
+                style={{ backgroundColor: isOn ? meta.color : '#D1D5DB' }}
+              />
+              <span>{meta.name}</span>
+            </button>
+          );
+        })}
       </div>
 
       {/* 3. Hero Financial Metric: Dynamic with interactive scrubbing */}
@@ -559,7 +635,7 @@ export const BenchmarkView: React.FC<BenchmarkViewProps> = ({
       {/* 4. Fluid Chart Area styled with Soft Curves, Glow & Anti-Colliding Badges */}
       <div 
         ref={chartContainerRef} 
-        className="relative w-full h-72 sm:h-80 my-1 min-w-0"
+        className="relative w-full h-80 sm:h-96 my-1 min-w-0"
       >
         {isLoading ? (
           <div className="w-full h-full flex flex-col items-center justify-center text-center">
@@ -599,84 +675,93 @@ export const BenchmarkView: React.FC<BenchmarkViewProps> = ({
                 />
                 <YAxis hide domain={[yDomain.min, yDomain.max]} />
 
-                {/* Soft vertical cursor for interactive scrubbing */}
+                {/* Clean floating tooltip on hover/scrub - replaces a wall of
+                    permanent badges with a single compact readout */}
                 <Tooltip
-                  content={() => null}
+                  content={<BenchmarkTooltip filteredBenchmarkKeys={filteredBenchmarkKeys} />}
                   cursor={{ stroke: '#CBD5E1', strokeWidth: 1.5, strokeDasharray: '3 3' }}
                 />
 
-                {/* 4 Core Benchmark Lines (Smooth monotone curves with soft opacity) */}
-                {CORE_BENCHMARKS.map((meta) => (
+                {/* Only the benchmarks the user hasn't hidden are drawn, softly, so
+                    they never compete visually with the portfolio line */}
+                {CORE_BENCHMARKS.filter((meta) => visibleBenchmarks.has(meta.key)).map((meta) => (
                   <Line
                     key={meta.key}
                     type="monotone"
                     dataKey={meta.key}
                     stroke={meta.color}
-                    strokeWidth={1.8}
-                    strokeOpacity={0.82}
+                    strokeWidth={1.5}
+                    strokeOpacity={0.55}
                     dot={false}
                     isAnimationActive={false}
                   />
                 ))}
 
-                {/* Portfolio Line (Vibrant, Prominent, 3px stroke with shadow effect) */}
+                {/* Portfolio Line - the one that matters, kept bold and vivid so it
+                    is always the clear focal point of the chart */}
                 <Line
                   type="monotone"
                   dataKey="portfolioPct"
                   stroke="#0284C7"
-                  strokeWidth={3}
+                  strokeWidth={3.5}
                   dot={false}
                   activeDot={{
-                    r: 5,
+                    r: 5.5,
                     fill: '#0284C7',
                     stroke: '#FFFFFF',
                     strokeWidth: 2,
                   }}
                   isAnimationActive={false}
                 />
+
+                {/* Drag the handles (or the middle) to zoom / pan through time.
+                    Ticks reuse the same "date" field, so hours show whenever the
+                    selected period has intraday data (1D / 3D). */}
+                <Brush
+                  dataKey="date"
+                  height={22}
+                  travellerWidth={9}
+                  stroke="#0284C7"
+                  fill="#F8FAFC"
+                  startIndex={zoomRange?.startIndex ?? 0}
+                  endIndex={zoomRange?.endIndex ?? Math.max(0, comparisonPoints.length - 1)}
+                  onChange={(range: any) => {
+                    if (range && typeof range.startIndex === 'number' && typeof range.endIndex === 'number') {
+                      setZoomRange({ startIndex: range.startIndex, endIndex: range.endIndex });
+                    }
+                  }}
+                  tickFormatter={(index: number) => comparisonPoints[index]?.date ?? ''}
+                />
               </LineChart>
             </ResponsiveContainer>
 
-            {/* Non-overlapping end-of-line percentage badges for each curve */}
+            {/* End-of-line markers: plain small dots for benchmarks, one
+                highlighted labeled badge for the portfolio - kept minimal on
+                purpose so the chart doesn't turn into a wall of pills. */}
             {lineEndBadges.length > 0 && (
               <div className="absolute inset-0 pointer-events-none">
-                {/* SVG Connecting Hairlines and End Dots */}
                 <svg className="w-full h-full absolute inset-0 overflow-visible">
-                  {lineEndBadges.map((item) => {
-                    const lineEndX = Math.max(0, chartDimensions.width - 78);
-                    const isDisplaced = Math.abs(item.adjustedY - item.rawY) > 2;
-
+                  {lineEndBadges.filter((i) => !i.isPortfolio).map((item) => {
+                    const lineEndX = Math.max(0, chartDimensions.width - 10);
                     return (
-                      <g key={`dot-${item.id}`}>
-                        <circle
-                          cx={lineEndX}
-                          cy={item.rawY}
-                          r={3.5}
-                          fill={item.color}
-                          stroke="#FFFFFF"
-                          strokeWidth={1.5}
-                        />
-
-                        {isDisplaced && (
-                          <path
-                            d={`M ${lineEndX} ${item.rawY} C ${lineEndX + 4} ${item.rawY}, ${lineEndX + 6} ${item.adjustedY}, ${lineEndX + 8} ${item.adjustedY}`}
-                            fill="none"
-                            stroke={item.color}
-                            strokeWidth={1.2}
-                            strokeDasharray="2 2"
-                            opacity={0.7}
-                          />
-                        )}
-                      </g>
+                      <circle
+                        key={`dot-${item.id}`}
+                        cx={lineEndX}
+                        cy={item.rawY}
+                        r={3}
+                        fill={item.color}
+                        stroke="#FFFFFF"
+                        strokeWidth={1.25}
+                        opacity={0.85}
+                      />
                     );
                   })}
                 </svg>
 
-                {/* Badges Container - Anti-collided with guaranteed vertical separation */}
-                {lineEndBadges.map((item) => {
+                {/* Single highlighted badge - the portfolio, and only the portfolio */}
+                {lineEndBadges.filter((i) => i.isPortfolio).map((item) => {
                   const isPositiveVal = item.value >= 0;
                   const formattedVal = `${isPositiveVal ? '+' : ''}${item.value.toFixed(2)}%`;
-
                   return (
                     <div
                       key={`badge-${item.id}`}
@@ -687,17 +772,35 @@ export const BenchmarkView: React.FC<BenchmarkViewProps> = ({
                         transform: 'translateY(-50%)',
                         backgroundColor: item.color,
                         color: item.textColor,
+                        boxShadow: '0 2px 8px rgba(2, 132, 199, 0.45)',
                       }}
-                      className="flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[10px] font-bold shadow-xs whitespace-nowrap leading-none transition-all duration-75 pointer-events-auto"
+                      className="flex items-center gap-1 px-2 py-1 rounded-full text-[11px] font-bold whitespace-nowrap leading-none pointer-events-auto ring-2 ring-white"
                       title={`${item.name}: ${formattedVal}`}
                     >
-                      <span className="opacity-90 font-medium text-[9px]">{item.name}</span>
                       <span>{formattedVal}</span>
                     </div>
                   );
                 })}
               </div>
             )}
+
+            {/* Zoom affordance / reset control */}
+            <div className="absolute top-0 left-0 pointer-events-none">
+              {isZoomed ? (
+                <button
+                  onClick={() => setZoomRange(null)}
+                  className="pointer-events-auto flex items-center gap-1 px-2 py-1 rounded-full bg-white/90 border border-gray-200 shadow-2xs text-[10px] font-semibold text-[#374151] hover:bg-gray-50 cursor-pointer"
+                >
+                  <RotateCcw className="w-3 h-3" />
+                  Repor zoom
+                </button>
+              ) : (
+                <span className="pointer-events-none flex items-center gap-1 px-2 py-0.5 rounded-full bg-white/70 text-[9px] font-medium text-gray-400">
+                  <ZoomIn className="w-3 h-3" />
+                  Arrasta a barra abaixo para dar zoom
+                </span>
+              )}
+            </div>
           </div>
         )}
       </div>
