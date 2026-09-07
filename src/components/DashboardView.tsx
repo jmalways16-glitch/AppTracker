@@ -63,6 +63,9 @@ const BENCHMARK_INFO: Record<BenchmarkKey, { name: string; desc: string }> = {
   STOXX: { name: 'STOXX Europe 600', desc: 'European Developed Markets ETF (EXSA)' },
   BTC: { name: 'Bitcoin (BTC)', desc: 'Leading Cryptocurrency Reference' },
   GLD: { name: 'Gold (GLD)', desc: 'Gold Spot Trust ETF' },
+  DIA: { name: 'Dow Jones (DIA)', desc: 'US Blue-Chip Industrial Index' },
+  IWM: { name: 'Russell 2000 (IWM)', desc: 'US Small-Cap Equity Index' },
+  URTH: { name: 'MSCI World (URTH)', desc: 'Global Developed Markets Index' },
 };
 
 export const DashboardView: React.FC<DashboardViewProps> = ({
