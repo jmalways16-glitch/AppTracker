@@ -162,7 +162,7 @@ export interface PortfolioHistoryResult {
   missingSymbols: string[];
 }
 
-export type BenchmarkKey = 'SPY' | 'VWCE' | 'QQQ' | 'STOXX' | 'BTC' | 'GLD';
+export type BenchmarkKey = 'SPY' | 'VWCE' | 'QQQ' | 'STOXX' | 'BTC' | 'GLD' | 'DIA' | 'IWM' | 'URTH';
 
 export interface ColumnMapping {
   symbolCol: string;
