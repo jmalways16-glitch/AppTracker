@@ -472,6 +472,9 @@ export const BENCHMARK_TICKER_MAP: Record<BenchmarkKey, string> = {
   STOXX: 'EXSA.DE',
   BTC: 'BTC-USD',
   GLD: 'GLD',
+  DIA: 'DIA',
+  IWM: 'IWM',
+  URTH: 'URTH',
 };
 
 /**
